@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检测中</title>
+    <style>
+        body {
+            background: #f5f7ff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .box {
+            background: white;
+            padding: 40px;
+            border-radius: 16px;
+            text-align: center;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        .progress-container {
+            width: 100%;
+            height: 20px;
+            background: #eee;
+            border-radius: 10px;
+            margin: 20px 0;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .status {
+            font-size: 16px;
+            color: #666;
+            margin: 10px 0;
+        }
+        .error {
+            color: #e74c3c;
+            margin-top: 20px;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <div class="spinner"></div>
+        <h2>视频检测中...</h2>
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="status" id="progressText">0% (0/0 帧)</div>
+        <div class="error" id="error"></div>
+    </div>
+
+    <script>
+        // 后端API地址（替换成你的IP）
+        const API_BASE_URL = 'http://你的IP地址:5000/api';
+
+        // 获取session_id
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session');
+
+        if (!sessionId) {
+            document.getElementById('error').textContent = '无效的会话ID';
+            document.querySelector('.spinner').style.display = 'none';
+        }
+
+        // 轮询获取进度
+        async function getProgress() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/progress/${sessionId}`);
+                const data = await res.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || '获取进度失败');
+                }
+
+                // 更新进度条
+                const progress = data.progress;
+                document.getElementById('progressBar').style.width = `${progress}%`;
+                document.getElementById('progressText').textContent =
+                    `${progress}% (${data.current_frame}/${data.total_frames} 帧，已分析 ${data.processed_frames} 帧)`;
+
+                // 检测失败
+                if (data.status === 'failed') {
+                    throw new Error(data.error || '检测失败');
+                }
+
+                // 检测完成，跳转到结果页
+                if (progress >= 100 || data.status === 'completed') {
+                    window.location.href = `result.html?session=${sessionId}`;
+                }
+            } catch (err) {
+                document.getElementById('error').textContent = `错误：${err.message}`;
+                document.querySelector('.spinner').style.display = 'none';
+            }
+        }
+
+        // 每1秒查询一次进度
+        getProgress();
+        setInterval(getProgress, 1000);
+    </script>
+</body>
+</html>

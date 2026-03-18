@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检测结果</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Microsoft YaHei", sans-serif;
+        }
+        body {
+            background: #f5f7ff;
+            padding: 20px;
+        }
+        .card {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 16px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .score-card {
+            flex: 1;
+            min-width: 200px;
+            padding: 20px;
+            border-radius: 10px;
+            background: #f8f9ff;
+            text-align: center;
+            border-left: 5px solid #667eea;
+        }
+        .score {
+            font-size: 36px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .risk-high { color: #e74c3c; border-left-color: #e74c3c; }
+        .risk-medium { color: #f39c12; border-left-color: #f39c12; }
+        .risk-low { color: #27ae60; border-left-color: #27ae60; }
+        .download-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border-radius: 5px;
+            text-decoration: none;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        .btn-secondary {
+            background: #f0f2ff;
+            color: #667eea;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
+        }
+        .report-content {
+            background: #f8f9ff;
+            padding: 20px;
+            border-radius: 10px;
+            max-height: 500px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .video-container {
+            width: 100%;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            aspect-ratio: 16/9;
+            margin: 20px 0;
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .error {
+            color: #e74c3c;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🎭 深度伪造检测结果</h1>
+
+        <div id="loading" class="loading">
+            <p>正在加载检测结果...</p>
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+
+        <div id="resultContent" style="display: none;">
+            <div class="result-header">
+                <div class="score-card" id="scoreCard">
+                    <div>平均伪造概率</div>
+                    <div class="score" id="avgScore">0%</div>
+                    <div id="riskLevel">低风险</div>
+                </div>
+            </div>
+
+            <div class="download-buttons">
+                <a href="#" id="videoLink" class="btn btn-primary">
+                    🎥 下载检测后的视频
+                </a>
+                <a href="#" id="reportLink" class="btn btn-secondary">
+                    📄 下载详细报告(JSON)
+                </a>
+                <a href="#" id="summaryLink" class="btn btn-secondary">
+                    📊 下载摘要报告(TXT)
+                </a>
+                <a href="index.html" class="btn btn-secondary">
+                    ← 返回首页
+                </a>
+            </div>
+
+            <div class="video-container">
+                <video controls id="resultVideo">
+                    <source src="" type="video/mp4">
+                    您的浏览器不支持HTML5视频播放
+                </video>
+            </div>
+
+            <h3 style="margin: 20px 0;">检测报告</h3>
+            <div class="report-content" id="summaryReport"></div>
+        </div>
+    </div>
+
+    <script>
+        // 后端API地址（替换成你的IP）
+        const API_BASE_URL = 'http://你的IP地址:5000/api';
+
+        // 获取session_id
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionId = urlParams.get('session');
+
+        // DOM元素
+        const loading = document.getElementById('loading');
+        const error = document.getElementById('error');
+        const resultContent = document.getElementById('resultContent');
+        const scoreCard = document.getElementById('scoreCard');
+        const avgScore = document.getElementById('avgScore');
+        const riskLevel = document.getElementById('riskLevel');
+        const summaryReport = document.getElementById('summaryReport');
+        const resultVideo = document.getElementById('resultVideo');
+        const videoLink = document.getElementById('videoLink');
+        const reportLink = document.getElementById('reportLink');
+        const summaryLink = document.getElementById('summaryLink');
+
+        // 获取检测结果
+        async function getResult() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/result/${sessionId}`);
+                const data = await res.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || '获取结果失败');
+                }
+
+                // 隐藏加载状态，显示结果
+                loading.style.display = 'none';
+                resultContent.style.display = 'block';
+
+                // 更新分数和风险等级
+                const score = (data.avg_fake_score * 100).toFixed(1);
+                avgScore.textContent = `${score}%`;
+                riskLevel.textContent = {
+                    'High': '高风险',
+                    'Medium': '中风险',
+                    'Low': '低风险'
+                }[data.risk_level];
+
+                // 设置风险等级样式
+                scoreCard.className = `score-card risk-${data.risk_level.toLowerCase()}`;
+
+                // 更新视频链接
+                const videoUrl = `${API_BASE_URL}/video/${sessionId}`;
+                resultVideo.src = videoUrl;
+                videoLink.href = videoUrl;
+                videoLink.download = `detected_video_${sessionId}.mp4`;
+
+                // 更新下载链接
+                reportLink.href = `${API_BASE_URL}/report/${sessionId}`;
+                summaryLink.href = `${API_BASE_URL}/summary/${sessionId}`;
+
+                // 更新报告内容
+                summaryReport.textContent = data.summary;
+
+            } catch (err) {
+                loading.style.display = 'none';
+                error.style.display = 'block';
+                error.textContent = `错误：${err.message}`;
+            }
+        }
+
+        // 加载结果
+        getResult();
+    </script>
+</body>
+</html>

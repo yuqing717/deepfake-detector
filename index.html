@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深度伪造检测系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Microsoft YaHei", sans-serif;
+        }
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            width: 100%;
+            max-width: 550px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        h1 {
+            font-size: 26px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            color: transparent;
+            margin-bottom: 20px;
+        }
+        .upload-area {
+            border: 2px dashed #667eea;
+            border-radius: 12px;
+            padding: 40px 20px;
+            margin: 20px 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .upload-area:hover {
+            background: #f8f9ff;
+            border-color: #764ba2;
+        }
+        #fileInput {
+            display: none;
+        }
+        #uploadBtn {
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 30px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: all 0.3s ease;
+        }
+        #uploadBtn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        #uploadBtn:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #666;
+        }
+        .error {
+            color: #e74c3c;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎭 深度伪造检测系统</h1>
+        <div class="upload-area" id="uploadBox">
+            <h3>点击上传视频</h3>
+            <p>支持 MP4 / AVI / MOV / MKV（最大500MB）</p>
+        </div>
+        <input type="file" id="fileInput" accept="video/*">
+        <button id="uploadBtn" disabled>选择文件后点击开始检测</button>
+        <div class="status" id="status"></div>
+        <div class="error" id="error"></div>
+    </div>
+
+    <script>
+        // 后端API地址（替换成你的IP）
+        const API_BASE_URL = 'http://你的IP地址:5000/api';
+
+        const fileInput = document.getElementById('fileInput');
+        const uploadBox = document.getElementById('uploadBox');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const status = document.getElementById('status');
+        const error = document.getElementById('error');
+
+        // 点击上传区域选择文件
+        uploadBox.onclick = () => fileInput.click();
+
+        // 文件选择后启用按钮
+        fileInput.onchange = () => {
+            if (fileInput.files.length > 0) {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '开始检测';
+                status.textContent = `已选择：${fileInput.files[0].name}`;
+                error.textContent = '';
+            } else {
+                uploadBtn.disabled = true;
+                uploadBtn.textContent = '选择文件后点击开始检测';
+                status.textContent = '';
+            }
+        };
+
+        // 上传文件并开始检测
+        uploadBtn.onclick = async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = '上传中...';
+            error.textContent = '';
+
+            const formData = new FormData();
+            formData.append('video', file);
+
+            try {
+                const res = await fetch(`${API_BASE_URL}/upload`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    // 跳转到进度页面
+                    window.location.href = `progress.html?session=${data.session_id}`;
+                } else {
+                    throw new Error(data.error || '上传失败');
+                }
+            } catch (err) {
+                error.textContent = `错误：${err.message}`;
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '重新上传';
+            }
+        };
+    </script>
+</body>
+</html>
