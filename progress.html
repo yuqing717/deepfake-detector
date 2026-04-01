@@ -78,6 +78,7 @@
 
     <script>
         // ======================== 配置（完全匹配你的ngrok地址）========================
+        const API_BASE_URL = "https://nonimperial-ladawn-ecalcarate.ngrok-free.dev/api";
         const SOCKET_URL = "https://nonimperial-ladawn-ecalcarate.ngrok-free.dev";
         const RESULT_PAGE = "result.html";
 
@@ -90,25 +91,13 @@
             setTimeout(() => window.location.href = "index.html", 2000);
         }
 
-        // ======================== 初始化SocketIO连接（彻底绕开CORS）========================
-        const socket = io(SOCKET_URL, {
-            transports: ['websocket'],
-            cors: {
-                origin: "*"
-            }
-        });
+        // ======================== 全局状态 ========================
+        let socket = null;
+        let usePollingFallback = false; // 是否启用轮询兜底
 
-        // 连接成功
-        socket.on('connect', () => {
-            console.log('Socket连接成功');
-            document.getElementById('error').textContent = '';
-            // 加入对应会话房间
-            socket.emit('join', { session_id: sessionId });
-        });
-
-        // 监听进度推送（后端主动发，前端被动收，完全不用轮询）
-        socket.on('detection_progress', (data) => {
-            if (data.session_id !== sessionId) return;
+        // ======================== 通用更新进度函数（SocketIO和轮询共用）========================
+        function updateProgress(data) {
+            if (data.session_id !== sessionId && data.session_id !== undefined) return;
 
             const progress = data.progress || 0;
             const currentFrame = data.current_frame || 0;
@@ -120,36 +109,91 @@
             document.getElementById('progressText').textContent =
                 `${progress.toFixed(1)}% (${currentFrame}/${totalFrames} 帧，已分析 ${processedFrames} 帧)`;
 
+            // 清空错误提示
+            document.getElementById('error').textContent = '';
+
             // 检测失败处理
             if (data.status === 'failed') {
                 document.getElementById('error').textContent = "检测失败：" + (data.error || "未知错误");
-                socket.disconnect();
+                if (socket) socket.disconnect();
+                return;
             }
 
             // 检测完成，跳结果页
             if (progress >= 100 || data.status === 'completed') {
-                socket.disconnect();
+                if (socket) socket.disconnect();
                 window.location.href = `${RESULT_PAGE}?session_id=${sessionId}`;
             }
-        });
+        }
 
-        // 监听检测完成事件
-        socket.on('detection_complete', (data) => {
-            if (data.session_id !== sessionId) return;
-            socket.disconnect();
-            window.location.href = `${RESULT_PAGE}?session_id=${sessionId}`;
-        });
+        // ======================== 轮询兜底函数 ========================
+        async function pollingFallback() {
+            try {
+                const res = await fetch(`${API_BASE_URL}/progress/${sessionId}`);
+                const data = await res.json();
+                updateProgress(data);
+            } catch (err) {
+                console.error("轮询错误:", err);
+            }
+        }
 
-        // 连接错误处理
-        socket.on('connect_error', (err) => {
-            console.error('Socket连接错误:', err);
-            document.getElementById('error').textContent = "网络连接失败，请检查ngrok和后端服务";
-        });
+        // ======================== 初始化SocketIO连接 ========================
+        function initSocket() {
+            socket = io(SOCKET_URL, {
+                transports: ['websocket'],
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionAttempts: 10,
+                cors: {
+                    origin: "*"
+                }
+            });
 
-        // 断开连接处理
-        socket.on('disconnect', () => {
-            console.log('Socket断开连接');
-        });
+            // 连接成功
+            socket.on('connect', () => {
+                console.log('Socket连接成功');
+                usePollingFallback = false;
+                document.getElementById('error').textContent = '';
+                // 加入对应会话房间
+                socket.emit('join', { session_id: sessionId });
+            });
+
+            // 监听进度推送
+            socket.on('detection_progress', (data) => {
+                updateProgress(data);
+            });
+
+            // 监听检测完成事件
+            socket.on('detection_complete', (data) => {
+                updateProgress(data);
+            });
+
+            // 连接错误 → 切轮询兜底
+            socket.on('connect_error', (err) => {
+                console.error('Socket连接错误，切轮询兜底:', err);
+                usePollingFallback = true;
+                document.getElementById('error').textContent = "网络波动，切换为轮询模式...";
+                socket.disconnect();
+                socket = null;
+            });
+
+            // 断开连接 → 切轮询兜底
+            socket.on('disconnect', () => {
+                console.log('Socket断开，切轮询兜底');
+                usePollingFallback = true;
+            });
+        }
+
+        // ======================== 启动双保险 ========================
+        initSocket(); // 先启动SocketIO
+        setInterval(() => {
+            if (usePollingFallback) {
+                pollingFallback(); // Socket断了就用轮询
+            }
+        }, 500); // 每500ms轮询一次，兜底
+
+        // 初始轮询一次，确保页面加载就有进度
+        pollingFallback();
     </script>
 </body>
 </html>
