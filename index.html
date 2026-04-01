@@ -132,7 +132,8 @@
                 });
                 const data = await res.json();
                 if (data.success) {
-                    window.location.href = `${PROGRESS_PAGE}?session=${data.session_id}`;
+                    // ======================== 🔥 唯一修改点：统一用 session_id 传递，和后端完全匹配 ========================
+                    window.location.href = `${PROGRESS_PAGE}?session_id=${data.session_id}`;
                 } else {
                     throw new Error(data.error);
                 }
