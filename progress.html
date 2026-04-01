@@ -93,16 +93,19 @@
 
         // ======================== 全局状态 ========================
         let socket = null;
-        let usePollingFallback = false; // 是否启用轮询兜底
+        let lastProgress = 0;
+        let isCompleted = false;
 
         // ======================== 通用更新进度函数（SocketIO和轮询共用）========================
         function updateProgress(data) {
+            if (isCompleted) return;
             if (data.session_id !== sessionId && data.session_id !== undefined) return;
 
             const progress = data.progress || 0;
             const currentFrame = data.current_frame || 0;
             const totalFrames = data.total_frames || 0;
             const processedFrames = data.processed_frames || 0;
+            const status = data.status || 'processing';
 
             // 更新进度条
             document.getElementById('progressBar').style.width = progress + '%';
@@ -111,39 +114,45 @@
 
             // 清空错误提示
             document.getElementById('error').textContent = '';
+            lastProgress = progress;
 
             // 检测失败处理
-            if (data.status === 'failed') {
+            if (status === 'failed') {
                 document.getElementById('error').textContent = "检测失败：" + (data.error || "未知错误");
                 if (socket) socket.disconnect();
+                isCompleted = true;
                 return;
             }
 
             // 检测完成，跳结果页
-            if (progress >= 100 || data.status === 'completed') {
+            if (progress >= 100 || status === 'completed') {
+                isCompleted = true;
                 if (socket) socket.disconnect();
                 window.location.href = `${RESULT_PAGE}?session_id=${sessionId}`;
             }
         }
 
-        // ======================== 轮询兜底函数 ========================
+        // ======================== 轮询兜底函数（自动更新，无需手动刷新）========================
         async function pollingFallback() {
+            if (isCompleted) return;
             try {
                 const res = await fetch(`${API_BASE_URL}/progress/${sessionId}`);
                 const data = await res.json();
                 updateProgress(data);
             } catch (err) {
                 console.error("轮询错误:", err);
+                document.getElementById('error').textContent = "网络波动，自动重试中...";
             }
         }
 
-        // ======================== 初始化SocketIO连接 ========================
+        // ======================== 初始化SocketIO连接（完善重连逻辑）========================
         function initSocket() {
             socket = io(SOCKET_URL, {
-                transports: ['websocket'],
+                transports: ['websocket', 'polling'], // 同时支持websocket和polling，Windows兼容
                 reconnection: true,
                 reconnectionDelay: 1000,
-                reconnectionAttempts: 10,
+                reconnectionDelayMax: 3000,
+                reconnectionAttempts: 999, // 无限重连
                 cors: {
                     origin: "*"
                 }
@@ -152,7 +161,6 @@
             // 连接成功
             socket.on('connect', () => {
                 console.log('Socket连接成功');
-                usePollingFallback = false;
                 document.getElementById('error').textContent = '';
                 // 加入对应会话房间
                 socket.emit('join', { session_id: sessionId });
@@ -168,29 +176,22 @@
                 updateProgress(data);
             });
 
-            // 连接错误 → 切轮询兜底
+            // 连接错误 → 自动重连
             socket.on('connect_error', (err) => {
-                console.error('Socket连接错误，切轮询兜底:', err);
-                usePollingFallback = true;
-                document.getElementById('error').textContent = "网络波动，切换为轮询模式...";
-                socket.disconnect();
-                socket = null;
+                console.error('Socket连接错误，自动重连:', err);
+                document.getElementById('error').textContent = "网络波动，自动重连中...";
             });
 
-            // 断开连接 → 切轮询兜底
+            // 断开连接 → 自动重连
             socket.on('disconnect', () => {
-                console.log('Socket断开，切轮询兜底');
-                usePollingFallback = true;
+                console.log('Socket断开，自动重连');
+                document.getElementById('error').textContent = "网络断开，自动重连中...";
             });
         }
 
         // ======================== 启动双保险 ========================
         initSocket(); // 先启动SocketIO
-        setInterval(() => {
-            if (usePollingFallback) {
-                pollingFallback(); // Socket断了就用轮询
-            }
-        }, 500); // 每500ms轮询一次，兜底
+        setInterval(pollingFallback, 500); // 每500ms轮询一次，兜底自动更新，彻底告别手动刷新
 
         // 初始轮询一次，确保页面加载就有进度
         pollingFallback();
