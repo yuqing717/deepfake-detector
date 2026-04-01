@@ -62,6 +62,8 @@
             100% { transform: rotate(360deg); }
         }
     </style>
+    <!-- 引入SocketIO客户端 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
     <div class="box">
@@ -75,87 +77,79 @@
     </div>
 
     <script>
-        // ======================== 🔥 1. 配置：100%匹配你当前的ngrok地址 ========================
-        const API_BASE_URL = "https://nonimperial-ladawn-ecalcarate.ngrok-free.dev/api";
+        // ======================== 配置（完全匹配你的ngrok地址）========================
+        const SOCKET_URL = "https://nonimperial-ladawn-ecalcarate.ngrok-free.dev";
         const RESULT_PAGE = "result.html";
 
-        // ======================== 🔥 2. 终极修复：参数名100%匹配，强制获取sessionId ========================
+        // 获取会话ID（同时支持session_id和session）
         const params = new URLSearchParams(window.location.search);
-        // 同时支持所有可能的参数名：session_id / session / id / sid，彻底解决参数不匹配
-        const sessionId = params.get('session_id') || params.get('session') || params.get('id') || params.get('sid');
+        const sessionId = params.get('session_id') || params.get('session');
 
-        // 🔥 3. 强制校验sessionId，避免null请求
         if (!sessionId) {
-            document.getElementById('error').textContent = "❌ 会话ID无效，即将返回首页...";
-            console.error("sessionId获取失败，URL参数:", window.location.search);
+            document.getElementById('error').textContent = "无效请求，即将返回首页...";
             setTimeout(() => window.location.href = "index.html", 2000);
-            throw new Error("sessionId无效"); // 终止后续代码
         }
-        console.log("✅ 会话ID获取成功:", sessionId);
-        console.log("✅ 请求URL:", `${API_BASE_URL}/progress/${sessionId}`);
 
-        // ======================== 🔥 4. 终极修复：彻底解决CORS，强制重试 ========================
-        let retryCount = 0;
-        const MAX_RETRY = 999; // 无限重试，直到成功
-
-        async function getProgress() {
-            try {
-                // 🔥 关键：用no-cors模式绕过浏览器CORS拦截，ngrok免费版专用
-                const response = await fetch(`${API_BASE_URL}/progress/${sessionId}`, {
-                    method: 'GET',
-                    mode: 'no-cors', // 🔥 核心：绕过CORS，强制发送请求
-                    headers: {
-                        'ngrok-skip-browser-warning': 'true' // 🔥 ngrok免费版专用，跳过浏览器警告
-                    }
-                });
-
-                // 🔥 关键：no-cors模式下，response.ok为false，但请求会正常发送到后端
-                // 手动解析响应（后端会返回正确数据）
-                const data = await response.json();
-                console.log("✅ 进度数据:", data);
-
-                // 🔥 清空错误提示，请求成功
-                document.getElementById('error').textContent = '';
-                retryCount = 0; // 重置重试次数
-
-                // 更新进度条
-                const progress = data.progress || 0;
-                const totalFrames = data.total_frames || 0;
-                const processedFrames = data.processed_frames || 0;
-                const currentFrame = data.current_frame || 0;
-
-                document.getElementById('progressBar').style.width = progress + '%';
-                document.getElementById('progressText').textContent =
-                    `${progress.toFixed(1)}% (${currentFrame}/${totalFrames} 帧，已分析 ${processedFrames} 帧)`;
-
-                // 状态处理
-                if (data.status === 'failed') {
-                    document.getElementById('error').textContent = "❌ 检测失败：" + (data.error || "未知错误");
-                    return;
-                }
-
-                // 检测完成 → 跳结果页
-                if (progress >= 100 || data.status === 'completed') {
-                    window.location.href = `${RESULT_PAGE}?session_id=${sessionId}`;
-                }
-
-            } catch (err) {
-                console.error("❌ 轮询错误:", err);
-                retryCount++;
-                if (retryCount < MAX_RETRY) {
-                    // 只在重试次数超过3次时显示提示，避免频繁弹窗
-                    if (retryCount > 3) {
-                        document.getElementById('error').textContent = `🔄 网络异常，重试中... (${retryCount})`;
-                    }
-                } else {
-                    document.getElementById('error').textContent = "❌ 网络连接失败，请检查ngrok和后端服务";
-                }
+        // ======================== 初始化SocketIO连接（彻底绕开CORS）========================
+        const socket = io(SOCKET_URL, {
+            transports: ['websocket'],
+            cors: {
+                origin: "*"
             }
-        }
+        });
 
-        // ======================== 🔥 5. 立即执行 + 定时轮询（500ms一次，稳定更新）========================
-        getProgress();
-        setInterval(getProgress, 500);
+        // 连接成功
+        socket.on('connect', () => {
+            console.log('Socket连接成功');
+            document.getElementById('error').textContent = '';
+            // 加入对应会话房间
+            socket.emit('join', { session_id: sessionId });
+        });
+
+        // 监听进度推送（后端主动发，前端被动收，完全不用轮询）
+        socket.on('detection_progress', (data) => {
+            if (data.session_id !== sessionId) return;
+
+            const progress = data.progress || 0;
+            const currentFrame = data.current_frame || 0;
+            const totalFrames = data.total_frames || 0;
+            const processedFrames = data.processed_frames || 0;
+
+            // 更新进度条
+            document.getElementById('progressBar').style.width = progress + '%';
+            document.getElementById('progressText').textContent =
+                `${progress.toFixed(1)}% (${currentFrame}/${totalFrames} 帧，已分析 ${processedFrames} 帧)`;
+
+            // 检测失败处理
+            if (data.status === 'failed') {
+                document.getElementById('error').textContent = "检测失败：" + (data.error || "未知错误");
+                socket.disconnect();
+            }
+
+            // 检测完成，跳结果页
+            if (progress >= 100 || data.status === 'completed') {
+                socket.disconnect();
+                window.location.href = `${RESULT_PAGE}?session_id=${sessionId}`;
+            }
+        });
+
+        // 监听检测完成事件
+        socket.on('detection_complete', (data) => {
+            if (data.session_id !== sessionId) return;
+            socket.disconnect();
+            window.location.href = `${RESULT_PAGE}?session_id=${sessionId}`;
+        });
+
+        // 连接错误处理
+        socket.on('connect_error', (err) => {
+            console.error('Socket连接错误:', err);
+            document.getElementById('error').textContent = "网络连接失败，请检查ngrok和后端服务";
+        });
+
+        // 断开连接处理
+        socket.on('disconnect', () => {
+            console.log('Socket断开连接');
+        });
     </script>
 </body>
 </html>
