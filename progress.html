@@ -75,11 +75,11 @@
     </div>
 
     <script>
-        // ======================== 配置（与后端完全匹配）========================
+        // ======================== 🔥 关键修复：域名完全匹配你当前的ngrok地址 ========================
         const API_BASE_URL = "https://nonimperial-ladawn-ecalcarate.ngrok-free.dev/api";
         const RESULT_PAGE = "result.html";
 
-        // 🔥 关键修复：同时支持 session_id 和 session 两种参数名
+        // 同时支持 session_id 和 session 两种参数名
         const params = new URLSearchParams(window.location.search);
         const sessionId = params.get('session_id') || params.get('session');
 
@@ -88,20 +88,19 @@
             setTimeout(() => window.location.href = "index.html", 2000);
         }
 
-        // ======================== 稳定轮询进度（100%兼容修复后后端）========================
+        // ======================== 终极修复：简化fetch请求，去掉CORS限制 ========================
         async function getProgress() {
             try {
+                // 🔥 关键：去掉mode: 'cors'，简化请求头，让ngrok免费版正常通过
                 const response = await fetch(`${API_BASE_URL}/progress/${sessionId}`, {
                     method: 'GET',
-                    headers: { 
-                        'Content-Type': 'application/json',
+                    headers: {
                         'Accept': 'application/json'
-                    },
-                    mode: 'cors'
+                    }
                 });
 
                 if (!response.ok) {
-                    console.error('请求失败:', response.status);
+                    console.error('请求状态码:', response.status);
                     return;
                 }
 
@@ -118,6 +117,9 @@
                 document.getElementById('progressText').textContent =
                     `${progress.toFixed(1)}% (${currentFrame}/${totalFrames} 帧，已分析 ${processedFrames} 帧)`;
 
+                // 清空错误提示
+                document.getElementById('error').textContent = '';
+
                 // 状态处理
                 if (data.status === 'failed') {
                     document.getElementById('error').textContent = "检测失败：" + (data.error || "未知错误");
@@ -131,11 +133,14 @@
 
             } catch (err) {
                 console.error("轮询错误:", err);
-                document.getElementById('error').textContent = "网络异常，重试中...";
+                // 只在连续失败时显示错误，避免频繁弹窗
+                if (!document.getElementById('error').textContent.includes("重试中")) {
+                    document.getElementById('error').textContent = "网络异常，重试中...";
+                }
             }
         }
 
-        // 立即执行 + 定时轮询
+        // 立即执行 + 定时轮询（500ms一次，稳定更新）
         getProgress();
         setInterval(getProgress, 500);
     </script>
