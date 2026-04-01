@@ -68,6 +68,8 @@
             display: inline-flex;
             align-items: center;
             gap: 5px;
+            border: none;
+            cursor: pointer;
         }
         .btn-primary {
             background: #667eea;
@@ -99,11 +101,14 @@
             overflow: hidden;
             aspect-ratio: 16/9;
             margin: 20px 0;
+            position: relative;
         }
         video {
             width: 100%;
             height: 100%;
             object-fit: contain;
+            display: block;
+            background: #000;
         }
         .loading {
             text-align: center;
@@ -114,6 +119,15 @@
             color: #e74c3c;
             text-align: center;
             padding: 20px;
+        }
+        .video-error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 16px;
+            display: none;
         }
     </style>
 </head>
@@ -137,25 +151,31 @@
             </div>
 
             <div class="download-buttons">
-                <a href="#" id="videoLink" class="btn btn-primary">
+                <a id="videoLink" class="btn btn-primary" download>
                     下载检测后的视频
                 </a>
-                <a href="#" id="reportLink" class="btn btn-secondary">
+                <a id="reportLink" class="btn btn-secondary" download>
                     下载详细报告(JSON)
                 </a>
-                <a href="#" id="summaryLink" class="btn btn-secondary">
+                <a id="summaryLink" class="btn btn-secondary" download>
                     下载摘要报告(TXT)
                 </a>
-                <a href="index.html" class="btn btn-secondary">
+                <a href="http://127.0.0.1:5000/index.html" class="btn btn-secondary">
                     ← 返回首页
                 </a>
             </div>
 
             <div class="video-container">
-                <video controls id="resultVideo">
-                    <source src="" type="video/mp4">
+                <video
+                    id="resultVideo"
+                    controls
+                    preload="auto"
+                    playsinline
+                >
+                    <source id="videoSource" src="" type="video/mp4">
                     您的浏览器不支持HTML5视频播放
                 </video>
+                <div id="videoError" class="video-error">视频加载失败，请检查后端服务</div>
             </div>
 
             <h3 style="margin: 20px 0;">检测报告</h3>
@@ -164,14 +184,10 @@
     </div>
 
     <script>
-        // 后端API地址
-        const API_BASE_URL = ' https://nonimperial-ladawn-ecalcarate.ngrok-free.dev/api';
+        const API_BASE_URL = "http://127.0.0.1:5000/api";
+        const params = new URLSearchParams(window.location.search);
+        const sessionId = params.get('session');
 
-        // 获取session_id
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session');
-
-        // DOM元素
         const loading = document.getElementById('loading');
         const error = document.getElementById('error');
         const resultContent = document.getElementById('resultContent');
@@ -180,25 +196,23 @@
         const riskLevel = document.getElementById('riskLevel');
         const summaryReport = document.getElementById('summaryReport');
         const resultVideo = document.getElementById('resultVideo');
+        const videoSource = document.getElementById('videoSource');
+        const videoError = document.getElementById('videoError');
         const videoLink = document.getElementById('videoLink');
         const reportLink = document.getElementById('reportLink');
         const summaryLink = document.getElementById('summaryLink');
 
-        // 获取检测结果
-        async function getResult() {
+        async function loadResult() {
             try {
                 const res = await fetch(`${API_BASE_URL}/result/${sessionId}`);
+                if (!res.ok) throw new Error(`服务器错误: ${res.status}`);
+
                 const data = await res.json();
+                if (!data.success) throw new Error(data.error || '获取结果失败');
 
-                if (!data.success) {
-                    throw new Error(data.error || '获取结果失败');
-                }
-
-                // 隐藏加载状态，显示结果
                 loading.style.display = 'none';
                 resultContent.style.display = 'block';
 
-                // 更新分数和风险等级
                 const score = (data.avg_fake_score * 100).toFixed(1);
                 avgScore.textContent = `${score}%`;
                 riskLevel.textContent = {
@@ -206,32 +220,42 @@
                     'Medium': '中风险',
                     'Low': '低风险'
                 }[data.risk_level];
-
-                // 设置风险等级样式
                 scoreCard.className = `score-card risk-${data.risk_level.toLowerCase()}`;
 
-                // 更新视频链接
                 const videoUrl = `${API_BASE_URL}/video/${sessionId}`;
+                console.log("视频地址:", videoUrl);
+
+                videoSource.src = videoUrl;
                 resultVideo.src = videoUrl;
                 videoLink.href = videoUrl;
                 videoLink.download = `detected_video_${sessionId}.mp4`;
 
-                // 更新下载链接
+                resultVideo.addEventListener('loadedmetadata', () => {
+                    console.log("视频元数据加载成功，时长:", resultVideo.duration);
+                    videoError.style.display = 'none';
+                });
+
+                resultVideo.addEventListener('error', (e) => {
+                    console.error("视频加载失败:", e);
+                    videoError.style.display = 'block';
+                    videoError.textContent = `视频加载失败: ${resultVideo.error ? resultVideo.error.message : '未知错误'}`;
+                });
+
+                resultVideo.load();
+
                 reportLink.href = `${API_BASE_URL}/report/${sessionId}`;
                 summaryLink.href = `${API_BASE_URL}/summary/${sessionId}`;
-
-                // 更新报告内容
                 summaryReport.textContent = data.summary;
 
             } catch (err) {
+                console.error("加载结果失败:", err);
                 loading.style.display = 'none';
                 error.style.display = 'block';
                 error.textContent = `错误：${err.message}`;
             }
         }
 
-        // 加载结果
-        getResult();
+        loadResult();
     </script>
 </body>
 </html>

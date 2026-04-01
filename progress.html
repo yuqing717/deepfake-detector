@@ -72,50 +72,54 @@
     </div>
 
     <script>
-        // 后端API地址
-        const API_BASE_URL = ' https://nonimperial-ladawn-ecalcarate.ngrok-free.dev/api';
+        const API_BASE_URL = "http://127.0.0.1:5000/api";
+        const RESULT_PAGE = "http://127.0.0.1:5000/result.html";
 
-        // 获取session_id
-        const urlParams = new URLSearchParams(window.location.search);
-        const sessionId = urlParams.get('session');
+        const params = new URLSearchParams(window.location.search);
+        const sessionId = params.get('session');
 
-        if (!sessionId) {
-            document.getElementById('error').textContent = '无效的会话ID';
-            document.querySelector('.spinner').style.display = 'none';
-        }
+        let retryCount = 0;
+        const MAX_RETRY = 10; // 最大重试次数
 
-        // 轮询获取进度
         async function getProgress() {
             try {
                 const res = await fetch(`${API_BASE_URL}/progress/${sessionId}`);
                 const data = await res.json();
 
                 if (!data.success) {
+                    // 🔥 关键修复：如果会话不存在，自动重试，不显示错误
+                    if (data.error === "会话不存在" && retryCount < MAX_RETRY) {
+                        retryCount++;
+                        console.log(`会话未初始化，重试中... (${retryCount}/${MAX_RETRY})`);
+                        return; // 直接返回，不显示错误
+                    }
                     throw new Error(data.error || '获取进度失败');
                 }
 
-                // 更新进度条
-                const progress = data.progress;
-                document.getElementById('progressBar').style.width = `${progress}%`;
-                document.getElementById('progressText').textContent =
-                    `${progress}% (${data.current_frame}/${data.total_frames} 帧，已分析 ${data.processed_frames} 帧)`;
+                // 重试成功，重置计数
+                retryCount = 0;
+                document.getElementById('error').textContent = '';
 
-                // 检测失败
+                const p = data.progress;
+                document.getElementById('progressBar').style.width = p + '%';
+                document.getElementById('progressText').textContent =
+                    `${p}% (${data.current_frame}/${data.total_frames} 帧，已分析 ${data.processed_frames} 帧)`;
+
                 if (data.status === 'failed') {
                     throw new Error(data.error || '检测失败');
                 }
 
-                // 检测完成，跳转到结果页
-                if (progress >= 100 || data.status === 'completed') {
-                    window.location.href = `result.html?session=${sessionId}`;
+                if (p >= 100 || data.status === 'completed') {
+                    window.location.href = `${RESULT_PAGE}?session=${sessionId}`;
                 }
-            } catch (err) {
-                document.getElementById('error').textContent = `错误：${err.message}`;
-                document.querySelector('.spinner').style.display = 'none';
+            } catch (e) {
+                // 只有重试次数用完，才显示错误
+                if (retryCount >= MAX_RETRY) {
+                    document.getElementById('error').textContent = '错误：' + e.message;
+                }
             }
         }
 
-        // 每0.5秒查询一次进度
         getProgress();
         setInterval(getProgress, 500);
     </script>

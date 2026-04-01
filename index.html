@@ -94,8 +94,8 @@
     </div>
 
     <script>
-        // 后端API地址
-        const API_BASE_URL = 'https://nonimperial-ladawn-ecalcarate.ngrok-free.dev/api';
+        const API_BASE_URL = "http://127.0.0.1:5000/api";
+        const PROGRESS_PAGE = "http://127.0.0.1:5000/progress.html";
 
         const fileInput = document.getElementById('fileInput');
         const uploadBox = document.getElementById('uploadBox');
@@ -103,24 +103,17 @@
         const status = document.getElementById('status');
         const error = document.getElementById('error');
 
-        // 点击上传区域选择文件
         uploadBox.onclick = () => fileInput.click();
 
-        // 文件选择后启用按钮
         fileInput.onchange = () => {
             if (fileInput.files.length > 0) {
                 uploadBtn.disabled = false;
                 uploadBtn.textContent = '开始检测';
                 status.textContent = `已选择：${fileInput.files[0].name}`;
                 error.textContent = '';
-            } else {
-                uploadBtn.disabled = true;
-                uploadBtn.textContent = '选择文件后点击开始检测';
-                status.textContent = '';
             }
         };
 
-        // 上传文件并开始检测
         uploadBtn.onclick = async () => {
             const file = fileInput.files[0];
             if (!file) return;
@@ -137,16 +130,14 @@
                     method: 'POST',
                     body: formData
                 });
-
                 const data = await res.json();
                 if (data.success) {
-                    // 跳转到进度页面
-                    window.location.href = `progress.html?session=${data.session_id}`;
+                    window.location.href = `${PROGRESS_PAGE}?session=${data.session_id}`;
                 } else {
-                    throw new Error(data.error || '上传失败');
+                    throw new Error(data.error);
                 }
             } catch (err) {
-                error.textContent = `错误：${err.message}`;
+                error.textContent = '错误：' + err.message;
                 uploadBtn.disabled = false;
                 uploadBtn.textContent = '重新上传';
             }
