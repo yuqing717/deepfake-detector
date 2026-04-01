@@ -12,6 +12,7 @@
             align-items: center;
             min-height: 100vh;
             padding: 20px;
+            font-family: "Microsoft YaHei", sans-serif;
         }
         .box {
             background: white;
@@ -40,10 +41,12 @@
             font-size: 16px;
             color: #666;
             margin: 10px 0;
+            line-height: 1.5;
         }
         .error {
             color: #e74c3c;
             margin-top: 20px;
+            font-weight: bold;
         }
         .spinner {
             border: 4px solid #f3f3f3;
@@ -72,54 +75,52 @@
     </div>
 
     <script>
+        // ======================== 配置========================
         const API_BASE_URL = "https://nonimperial-ladawn-ecalcarate.ngrok-free.dev/api";
         const RESULT_PAGE = "result.html";
 
+        // 获取会话ID
         const params = new URLSearchParams(window.location.search);
-        const sessionId = params.get('session');
+        const sessionId = params.get('session') || params.get('session_id');
 
-        let retryCount = 0;
-        const MAX_RETRY = 10; // 最大重试次数
+        if (!sessionId) {
+            document.getElementById('error').textContent = "无效请求，即将返回首页...";
+            setTimeout(() => window.location.href = "index.html", 2000);
+        }
 
+        // ======================== 稳定轮询进度（100%兼容修复后后端）========================
         async function getProgress() {
             try {
-                const res = await fetch(`${API_BASE_URL}/progress/${sessionId}`);
-                const data = await res.json();
+                const response = await fetch(`${API_BASE_URL}/progress/${sessionId}`, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' }
+                });
 
-                if (!data.success) {
-                    // 🔥 关键修复：如果会话不存在，自动重试，不显示错误
-                    if (data.error === "会话不存在" && retryCount < MAX_RETRY) {
-                        retryCount++;
-                        console.log(`会话未初始化，重试中... (${retryCount}/${MAX_RETRY})`);
-                        return; // 直接返回，不显示错误
-                    }
-                    throw new Error(data.error || '获取进度失败');
-                }
+                const data = await response.json();
 
-                // 重试成功，重置计数
-                retryCount = 0;
-                document.getElementById('error').textContent = '';
-
-                const p = data.progress;
-                document.getElementById('progressBar').style.width = p + '%';
+                // 更新进度条
+                const progress = data.progress || 0;
+                document.getElementById('progressBar').style.width = progress + '%';
                 document.getElementById('progressText').textContent =
-                    `${p}% (${data.current_frame}/${data.total_frames} 帧，已分析 ${data.processed_frames} 帧)`;
+                    `${progress.toFixed(1)}% (${data.processed_frames || 0}/${data.total_frames || 0} 帧)`;
 
+                // 状态处理
                 if (data.status === 'failed') {
-                    throw new Error(data.error || '检测失败');
+                    document.getElementById('error').textContent = "检测失败：" + (data.error || "未知错误");
+                    return;
                 }
 
-                if (p >= 100 || data.status === 'completed') {
+                // 检测完成 → 跳结果页
+                if (progress >= 100 || data.status === 'completed') {
                     window.location.href = `${RESULT_PAGE}?session=${sessionId}`;
                 }
-            } catch (e) {
-                // 只有重试次数用完，才显示错误
-                if (retryCount >= MAX_RETRY) {
-                    document.getElementById('error').textContent = '错误：' + e.message;
-                }
+
+            } catch (err) {
+                console.log("加载中...", err);
             }
         }
 
+        // 立即执行 + 定时轮询
         getProgress();
         setInterval(getProgress, 500);
     </script>
