@@ -75,13 +75,13 @@
     </div>
 
     <script>
-        // ======================== 配置========================
+        // ======================== 配置（与后端完全匹配）========================
         const API_BASE_URL = "https://nonimperial-ladawn-ecalcarate.ngrok-free.dev/api";
         const RESULT_PAGE = "result.html";
 
-        // 获取会话ID
+        // 🔥 关键修复：同时支持 session_id 和 session 两种参数名
         const params = new URLSearchParams(window.location.search);
-        const sessionId = params.get('session') || params.get('session_id');
+        const sessionId = params.get('session_id') || params.get('session');
 
         if (!sessionId) {
             document.getElementById('error').textContent = "无效请求，即将返回首页...";
@@ -93,16 +93,30 @@
             try {
                 const response = await fetch(`${API_BASE_URL}/progress/${sessionId}`, {
                     method: 'GET',
-                    headers: { 'Content-Type': 'application/json' }
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    mode: 'cors'
                 });
 
+                if (!response.ok) {
+                    console.error('请求失败:', response.status);
+                    return;
+                }
+
                 const data = await response.json();
+                console.log('进度数据:', data);
 
                 // 更新进度条
                 const progress = data.progress || 0;
+                const totalFrames = data.total_frames || 0;
+                const processedFrames = data.processed_frames || 0;
+                const currentFrame = data.current_frame || 0;
+
                 document.getElementById('progressBar').style.width = progress + '%';
                 document.getElementById('progressText').textContent =
-                    `${progress.toFixed(1)}% (${data.processed_frames || 0}/${data.total_frames || 0} 帧)`;
+                    `${progress.toFixed(1)}% (${currentFrame}/${totalFrames} 帧，已分析 ${processedFrames} 帧)`;
 
                 // 状态处理
                 if (data.status === 'failed') {
@@ -112,11 +126,12 @@
 
                 // 检测完成 → 跳结果页
                 if (progress >= 100 || data.status === 'completed') {
-                    window.location.href = `${RESULT_PAGE}?session=${sessionId}`;
+                    window.location.href = `${RESULT_PAGE}?session_id=${sessionId}`;
                 }
 
             } catch (err) {
-                console.log("加载中...", err);
+                console.error("轮询错误:", err);
+                document.getElementById('error').textContent = "网络异常，重试中...";
             }
         }
 
